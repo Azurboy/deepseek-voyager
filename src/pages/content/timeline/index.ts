@@ -1,9 +1,9 @@
 import { TimelineManager } from './manager';
+import { isConversationRoute } from '../deepseek/selectors';
 
-function isGeminiConversationRoute(pathname = location.pathname): boolean {
-  // Support account-scoped routes like /u/1/app or /u/0/gem/
-  // Matches: "/app", "/gem/", "/u/<num>/app", "/u/<num>/gem/"
-  return /^\/(?:u\/\d+\/)?(app|gem)(\/|$)/.test(pathname);
+function isDeepSeekConversationRoute(pathname = location.pathname): boolean {
+  // DeepSeek 对话路由格式: /a/chat/s/[UUID]
+  return isConversationRoute(pathname);
 }
 
 let timelineManagerInstance: TimelineManager | null = null;
@@ -32,13 +32,13 @@ function initializeTimeline(): void {
   timelineManagerInstance = new TimelineManager();
   timelineManagerInstance
     .init()
-    .catch((err) => console.error('Timeline initialization failed:', err));
+    .catch((err) => console.error('[DeepSeek Voyager] Timeline initialization failed:', err));
 }
 
 function handleUrlChange(): void {
   if (location.href === currentUrl) return;
   currentUrl = location.href;
-  if (isGeminiConversationRoute()) initializeTimeline();
+  if (isDeepSeekConversationRoute()) initializeTimeline();
   else {
     if (timelineManagerInstance) {
       try {
@@ -111,13 +111,13 @@ function cleanup(): void {
 
 export function startTimeline(): void {
   // Immediately initialize if we're already on a conversation page
-  if (document.body && isGeminiConversationRoute()) {
+  if (document.body && isDeepSeekConversationRoute()) {
     initializeTimeline();
   }
 
   const initialObserver = new MutationObserver(() => {
     if (document.body) {
-      if (isGeminiConversationRoute()) initializeTimeline();
+      if (isDeepSeekConversationRoute()) initializeTimeline();
 
       // Disconnect and remove from tracking
       initialObserver.disconnect();

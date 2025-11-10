@@ -133,20 +133,20 @@ export class TimelineManager {
       if ((window as any).chrome?.storage?.sync) {
         (window as any).chrome.storage.sync.get(
           {
-            geminiTimelineScrollMode: 'flow',
-            geminiTimelineHideContainer: false,
-            geminiTimelineDraggable: false,
-            geminiTimelinePosition: null,
+            deepseekTimelineScrollMode: 'flow',
+            deepseekTimelineHideContainer: false,
+            deepseekTimelineDraggable: false,
+            deepseekTimelinePosition: null,
           },
           (res: any) => {
-            const m = res?.geminiTimelineScrollMode;
+            const m = res?.deepseekTimelineScrollMode;
             if (m === 'flow' || m === 'jump') this.scrollMode = m;
-            this.hideContainer = !!res?.geminiTimelineHideContainer;
+            this.hideContainer = !!res?.deepseekTimelineHideContainer;
             this.applyContainerVisibility();
-            this.toggleDraggable(!!res?.geminiTimelineDraggable);
-            if (res?.geminiTimelinePosition) {
-              this.ui.timelineBar!.style.top = `${res.geminiTimelinePosition.top}px`;
-              this.ui.timelineBar!.style.left = `${res.geminiTimelinePosition.left}px`;
+            this.toggleDraggable(!!res?.deepseekTimelineDraggable);
+            if (res?.deepseekTimelinePosition) {
+              this.ui.timelineBar!.style.top = `${res.deepseekTimelinePosition.top}px`;
+              this.ui.timelineBar!.style.left = `${res.deepseekTimelinePosition.left}px`;
             }
           }
         );
@@ -154,25 +154,25 @@ export class TimelineManager {
         try {
           (window as any).chrome.storage.onChanged.addListener((changes: any, area: string) => {
             if (area !== 'sync') return;
-            if (changes?.geminiTimelineScrollMode) {
-              const n = changes.geminiTimelineScrollMode.newValue;
+            if (changes?.deepseekTimelineScrollMode) {
+              const n = changes.deepseekTimelineScrollMode.newValue;
               if (n === 'flow' || n === 'jump') this.scrollMode = n;
             }
-            if (changes?.geminiTimelineHideContainer) {
-              this.hideContainer = !!changes.geminiTimelineHideContainer.newValue;
+            if (changes?.deepseekTimelineHideContainer) {
+              this.hideContainer = !!changes.deepseekTimelineHideContainer.newValue;
               this.applyContainerVisibility();
             }
-            if (changes?.geminiTimelineDraggable) {
-              this.toggleDraggable(!!changes.geminiTimelineDraggable.newValue);
+            if (changes?.deepseekTimelineDraggable) {
+              this.toggleDraggable(!!changes.deepseekTimelineDraggable.newValue);
             }
-            if (changes?.geminiTimelinePosition && !changes.geminiTimelinePosition.newValue) {
+            if (changes?.deepseekTimelinePosition && !changes.deepseekTimelinePosition.newValue) {
               this.ui.timelineBar!.style.top = '';
               this.ui.timelineBar!.style.left = '';
             }
           });
         } catch {}
       } else {
-        const saved = localStorage.getItem('geminiTimelineScrollMode');
+        const saved = localStorage.getItem('deepseekTimelineScrollMode');
         if (saved === 'flow' || saved === 'jump') this.scrollMode = saved;
       }
     } catch {}
@@ -185,7 +185,7 @@ export class TimelineManager {
 
   private computeConversationId(): string {
     const raw = `${location.host}${location.pathname}${location.search}`;
-    return `gemini:${hashString(raw)}`;
+    return `deepseek:${hashString(raw)}`;
   }
 
   private waitForElement(selector: string, timeoutMs: number = 5000): Promise<Element | null> {
@@ -219,21 +219,17 @@ export class TimelineManager {
     const configured = this.getConfiguredUserTurnSelector();
     let userOverride = '';
     try {
-      userOverride = localStorage.getItem('geminiTimelineUserTurnSelector') || '';
+      userOverride = localStorage.getItem('deepseekTimelineUserTurnSelector') || '';
     } catch {}
     const defaultCandidates = [
-      // Angular-based Gemini UI user bubble (primary)
-      '.user-query-bubble-with-background',
-      // Angular containers (fallbacks if bubble selector changes)
-      '.user-query-bubble-container',
-      '.user-query-container',
-      'user-query-content .user-query-bubble-with-background',
-      // Attribute-based fallbacks for other Gemini variants
-      'div[aria-label="User message"]',
-      'article[data-author="user"]',
-      'article[data-turn="user"]',
-      '[data-message-author-role="user"]',
-      'div[role="listitem"][data-user="true"]',
+      // DeepSeek 消息选择器（优先使用稳定的类名）
+      '.ds-message',
+      '[class*="ds-message"]',
+      // 通用备选方案
+      'div[class*="message"]',
+      '[role="article"]',
+      'div[class*="user"]',
+      '[data-role="user"]',
     ];
     const candidates = configured.length
       ? [configured, ...defaultCandidates.filter((s) => s !== configured)]
@@ -270,13 +266,13 @@ export class TimelineManager {
       // Persist auto-detected selector for future sessions when no explicit user override exists
       if (!userOverride && matchedSelector) {
         try {
-          localStorage.setItem('geminiTimelineUserTurnSelectorAuto', matchedSelector);
+          localStorage.setItem('deepseekTimelineUserTurnSelectorAuto', matchedSelector);
         } catch {}
       }
       // If a stale user override failed (matchedSelector differs), clear it so we don't keep retrying it
       if (userOverride && matchedSelector && matchedSelector !== userOverride) {
         try {
-          localStorage.removeItem('geminiTimelineUserTurnSelector');
+          localStorage.removeItem('deepseekTimelineUserTurnSelector');
         } catch {}
       }
     }
@@ -299,9 +295,9 @@ export class TimelineManager {
 
   private getConfiguredUserTurnSelector(): string {
     try {
-      const user = localStorage.getItem('geminiTimelineUserTurnSelector');
+      const user = localStorage.getItem('deepseekTimelineUserTurnSelector');
       if (user && typeof user === 'string') return user;
-      const auto = localStorage.getItem('geminiTimelineUserTurnSelectorAuto');
+      const auto = localStorage.getItem('deepseekTimelineUserTurnSelectorAuto');
       return auto && typeof auto === 'string' ? auto : '';
     } catch {
       return '';
@@ -804,7 +800,7 @@ export class TimelineManager {
 
     this.onStorage = (e: StorageEvent) => {
       if (!e || e.storageArea !== localStorage) return;
-      const expectedKey = `geminiTimelineStars:${this.conversationId}`;
+      const expectedKey = `deepseekTimelineStars:${this.conversationId}`;
       if (e.key !== expectedKey) return;
       let nextArr: string[] = [];
       try {
@@ -876,7 +872,7 @@ export class TimelineManager {
     // Overridable via spring profile
     const spring = (() => {
       try {
-        return localStorage.getItem('geminiTimelineSpring') || 'ios';
+        return localStorage.getItem('deepseekTimelineSpring') || 'ios';
       } catch {
         return 'ios';
       }
@@ -925,7 +921,7 @@ export class TimelineManager {
 
   private getFlowDurationMs(): number {
     try {
-      const d = parseInt(localStorage.getItem('geminiTimelineFlowDurationMs') || '650', 10);
+      const d = parseInt(localStorage.getItem('deepseekTimelineFlowDurationMs') || '650', 10);
       return Math.max(300, Math.min(1800, Number.isFinite(d) ? d : 650));
     } catch {
       return 650;
@@ -981,7 +977,7 @@ export class TimelineManager {
       // Use the same spring shaping as easeInOutQuad override
       const spring = (() => {
         try {
-          return localStorage.getItem('geminiTimelineSpring') || 'ios';
+          return localStorage.getItem('deepseekTimelineSpring') || 'ios';
         } catch {
           return 'ios';
         }
@@ -1444,7 +1440,7 @@ export class TimelineManager {
     if (!this.ui.timelineBar) return;
     const rect = this.ui.timelineBar.getBoundingClientRect();
     const { top, left } = rect;
-    chrome.storage.sync.set({ geminiTimelinePosition: { top, left } });
+    chrome.storage.sync.set({ deepseekTimelinePosition: { top, left } });
   }
 
   private hideTooltip(immediate = false): void {
@@ -1479,7 +1475,7 @@ export class TimelineManager {
     const cid = this.conversationId;
     if (!cid) return;
     try {
-      localStorage.setItem(`geminiTimelineStars:${cid}`, JSON.stringify(Array.from(this.starred)));
+      localStorage.setItem(`deepseekTimelineStars:${cid}`, JSON.stringify(Array.from(this.starred)));
     } catch {}
   }
 
@@ -1488,7 +1484,7 @@ export class TimelineManager {
     const cid = this.conversationId;
     if (!cid) return;
     try {
-      const raw = localStorage.getItem(`geminiTimelineStars:${cid}`);
+      const raw = localStorage.getItem(`deepseekTimelineStars:${cid}`);
       if (!raw) return;
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) arr.forEach((id: any) => this.starred.add(String(id)));

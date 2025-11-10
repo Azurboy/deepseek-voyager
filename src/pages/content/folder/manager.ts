@@ -1,18 +1,20 @@
 import browser from 'webextension-polyfill';
 
-import {
-  getGemIcon,
-  DEFAULT_GEM_ICON,
-  DEFAULT_CONVERSATION_ICON,
-  GEM_CONFIG,
-} from './gemConfig';
 import type { Folder, FolderData, ConversationReference, DragData } from './types';
 
 import { FolderImportExportService } from '@/features/folder/services/FolderImportExportService';
 import type { ImportStrategy } from '@/features/folder/types/import-export';
 import { initI18n, getTranslationSync } from '@/utils/i18n';
+import {
+  DEEPSEEK_SELECTORS,
+  tryFindElement,
+  tryFindElements,
+  extractConversationId,
+  buildConversationUrl,
+} from '../deepseek/selectors';
+import { createIcon, getIconHTML } from './icons';
 
-const STORAGE_KEY = 'gvFolderData';
+const STORAGE_KEY = 'dsFolderData';  // DeepSeek Folder Data
 const IS_DEBUG = false; // Set to true to enable debug logging
 const ROOT_CONVERSATIONS_ID = '__root_conversations__'; // Special ID for root-level conversations
 
@@ -30,8 +32,8 @@ export class FolderManager {
   }
   private isDebugEnabled(): boolean {
     try {
-      // Enable by setting localStorage.gvFolderDebug = '1'
-      return IS_DEBUG || localStorage.getItem('gvFolderDebug') === '1';
+      // Enable by setting localStorage.dsFolderDebug = '1'
+      return IS_DEBUG || localStorage.getItem('dsFolderDebug') === '1';
     } catch {
       return IS_DEBUG;
     }
@@ -96,10 +98,11 @@ export class FolderManager {
   private async waitForSidebar(): Promise<void> {
     return new Promise((resolve) => {
       const checkSidebar = () => {
-        // Look for the overflow-container which holds the sidebar content
-        const container = document.querySelector('[data-test-id="overflow-container"]');
+        // DeepSeek 使用 .ds-scroll-area 作为侧边栏容器
+        const container = tryFindElement(DEEPSEEK_SELECTORS.sidebarContainer);
         if (container) {
           this.sidebarContainer = container as HTMLElement;
+          this.debug('找到侧边栏容器');
           resolve();
         } else {
           setTimeout(checkSidebar, 500);
@@ -110,30 +113,23 @@ export class FolderManager {
   }
 
   private findRecentSection(): void {
-    if (!this.sidebarContainer) return;
-
-    // Find conversations-list (Recent section) by looking for the conversations container
-    // Try multiple selectors to find the Recent section
-    let conversationsList = this.sidebarContainer.querySelector('[data-test-id="all-conversations"]');
-
-    if (!conversationsList) {
-      // Fallback: find by class name
-      conversationsList = this.sidebarContainer.querySelector('.chat-history');
+    if (!this.sidebarContainer) {
+      this.debugWarn('侧边栏容器不存在');
+      return;
     }
 
-    if (!conversationsList) {
-      // Fallback: find the element that contains conversation items
-      const conversationItems = this.sidebarContainer.querySelectorAll('[data-test-id="conversation"]');
-      if (conversationItems.length > 0) {
-        // Find the parent that contains these conversations
-        conversationsList = conversationItems[0].closest('.chat-history, [class*="conversation"]');
-      }
-    }
-
-    if (conversationsList) {
-      this.recentSection = conversationsList as HTMLElement;
+    this.debug('查找对话列表，侧边栏容器:', this.sidebarContainer);
+    
+    // DeepSeek: 直接在document中查找对话项（因为侧边栏可能嵌套较深）
+    const conversationItems = document.querySelectorAll('a[href*="/a/chat/s/"]');
+    this.debug('找到对话链接数量:', conversationItems.length);
+    
+    if (conversationItems.length > 0) {
+      // 使用侧边栏容器作为 Recent section
+      this.recentSection = this.sidebarContainer;
+      this.debug('✅ 找到对话列表区域，包含', conversationItems.length, '个对话');
     } else {
-      this.debugWarn('Could not find Recent section - will retry');
+      this.debugWarn('❌ 未找到对话列表 - 将在2秒后重试');
       // Retry after a delay
       setTimeout(() => {
         this.findRecentSection();
@@ -169,16 +165,30 @@ export class FolderManager {
     const header = document.createElement('div');
     header.className = 'gv-folder-header';
 
-    // Match the style of Recent section title
+    // Use bookshelf icon instead of text title
     const titleContainer = document.createElement('div');
     titleContainer.className = 'title-container';
+    
+    const iconWrapper = document.createElement('div');
+    iconWrapper.style.display = 'flex';
+    iconWrapper.style.alignItems = 'center';
+    iconWrapper.style.gap = '8px';
+    iconWrapper.style.paddingLeft = '12px';
+    
+    const bookshelfIcon = createIcon('bookshelf');
+    bookshelfIcon.style.opacity = '0.7';
+    iconWrapper.appendChild(bookshelfIcon);
+    
+    // Optional: small text label
+    const label = document.createElement('span');
+    label.textContent = this.t('folder_title');
+    label.style.fontSize = '12px';
+    label.style.opacity = '0.6';
+    label.style.fontWeight = '500';
+    label.style.color = 'var(--bard-color-on-surface-variant, #666)';  // 去除紫色，使用统一的文字颜色
+    iconWrapper.appendChild(label);
 
-    const title = document.createElement('h1');
-    title.className = 'title gds-label-l'; // Match Recent section style
-    title.textContent = this.t('folder_title');
-    title.style.visibility = 'visible';
-
-    titleContainer.appendChild(title);
+    titleContainer.appendChild(iconWrapper);
 
     // Actions container for buttons
     const actionsContainer = document.createElement('div');
@@ -187,21 +197,21 @@ export class FolderManager {
     // Import button
     const importButton = document.createElement('button');
     importButton.className = 'gv-folder-action-btn';
-    importButton.innerHTML = `<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">upload</mat-icon>`;
+    importButton.appendChild(createIcon('upload'));
     importButton.title = this.t('folder_import');
     importButton.addEventListener('click', () => this.showImportDialog());
 
     // Export button
     const exportButton = document.createElement('button');
     exportButton.className = 'gv-folder-action-btn';
-    exportButton.innerHTML = `<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">download</mat-icon>`;
+    exportButton.appendChild(createIcon('download'));
     exportButton.title = this.t('folder_export');
     exportButton.addEventListener('click', () => this.exportFolders());
 
     // Add folder button
     const addButton = document.createElement('button');
     addButton.className = 'gv-folder-add-btn';
-    addButton.innerHTML = `<mat-icon role="img" class="mat-icon notranslate gds-icon-l google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">add</mat-icon>`;
+    addButton.appendChild(createIcon('add'));
     addButton.title = this.t('folder_create');
     addButton.addEventListener('click', () => this.createFolder());
 
@@ -259,15 +269,11 @@ export class FolderManager {
     // Expand/collapse button
     const expandBtn = document.createElement('button');
     expandBtn.className = 'gv-folder-expand-btn';
-    expandBtn.innerHTML = folder.isExpanded
-      ? '<span class="google-symbols">expand_more</span>'
-      : '<span class="google-symbols">chevron_right</span>';
+    expandBtn.appendChild(createIcon(folder.isExpanded ? 'expand_more' : 'chevron_right'));
     expandBtn.addEventListener('click', () => this.toggleFolder(folder.id));
 
     // Folder icon
-    const folderIcon = document.createElement('span');
-    folderIcon.className = 'gv-folder-icon google-symbols';
-    folderIcon.textContent = 'folder';
+    const folderIcon = createIcon('folder', 'gv-folder-icon');
 
     // Folder name
     const folderName = document.createElement('span');
@@ -284,14 +290,7 @@ export class FolderManager {
     // Pin button
     const pinBtn = document.createElement('button');
     pinBtn.className = 'gv-folder-pin-btn';
-    const pinIcon = document.createElement('span');
-    pinIcon.className = 'google-symbols';
-    pinIcon.textContent = 'push_pin';
-    // Add filled style for pinned folders
-    if (folder.pinned) {
-      pinIcon.style.fontVariationSettings = "'FILL' 1";
-    }
-    pinBtn.appendChild(pinIcon);
+    pinBtn.appendChild(createIcon(folder.pinned ? 'push_pin_filled' : 'push_pin'));
     pinBtn.title = folder.pinned ? this.t('folder_unpin') : this.t('folder_pin');
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -301,7 +300,7 @@ export class FolderManager {
     // Actions menu
     const actionsBtn = document.createElement('button');
     actionsBtn.className = 'gv-folder-actions-btn';
-    actionsBtn.innerHTML = '<span class="google-symbols">more_vert</span>';
+    actionsBtn.appendChild(createIcon('more_vert'));
     actionsBtn.addEventListener('click', (e) => this.showFolderMenu(e, folder.id));
 
     folderHeader.appendChild(expandBtn);
@@ -389,19 +388,8 @@ export class FolderManager {
       convEl.style.opacity = '1';
     });
 
-    // Conversation icon - use Gem-specific icons
-    const icon = document.createElement('mat-icon');
-    icon.className = 'mat-icon notranslate gv-conversation-icon google-symbols mat-ligature-font mat-icon-no-color';
-    icon.setAttribute('role', 'img');
-    icon.setAttribute('aria-hidden', 'true');
-
-    // Set icon based on conversation type
-    let iconName = DEFAULT_CONVERSATION_ICON;
-    if (conv.isGem && conv.gemId) {
-      iconName = getGemIcon(conv.gemId);
-    }
-    icon.setAttribute('fonticon', iconName);
-    icon.textContent = iconName;
+    // Conversation icon
+    const icon = createIcon('chat_bubble', 'gv-conversation-icon');
 
     // Conversation title
     const title = document.createElement('span');
@@ -415,7 +403,7 @@ export class FolderManager {
     // Remove button
     const removeBtn = document.createElement('button');
     removeBtn.className = 'gv-conversation-remove-btn';
-    removeBtn.innerHTML = '<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">close</mat-icon>';
+    removeBtn.appendChild(createIcon('close'));
     removeBtn.title = this.t('folder_remove_conversation');
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -533,8 +521,10 @@ export class FolderManager {
   private makeConversationsDraggable(): void {
     if (!this.sidebarContainer) return;
 
-    const conversations = this.sidebarContainer.querySelectorAll('[data-test-id="conversation"]');
+    // DeepSeek: 对话项是 a[href*="/a/chat/s/"] 链接
+    const conversations = tryFindElements(DEEPSEEK_SELECTORS.conversationItem, this.sidebarContainer);
     conversations.forEach((conv) => this.makeConversationDraggable(conv as HTMLElement));
+    this.debug('使', conversations.length, '个对话可拖拽');
   }
 
   /**
@@ -690,80 +680,37 @@ export class FolderManager {
   }
 
   private extractConversationId(element: HTMLElement): string {
-    // Extract from jslog attribute which contains the conversation ID
-    const jslog = element.getAttribute('jslog');
-    if (jslog) {
-      // Match conversation ID - it appears in quotes like ["c_3456c77162722c1a",...]
-      // Also try without quotes in case format changes
-      const match = jslog.match(/[",\[]c_([a-f0-9]+)[",\]]/);
-      if (match) {
-        const conversationId = `c_${match[1]}`;
-        this.debug('Extracted conversation ID:', conversationId, 'from jslog:', jslog);
-        return conversationId;
-      }
-      // Fallback: try matching without surrounding characters
-      const simpleMatch = jslog.match(/c_[a-f0-9]+/);
-      if (simpleMatch) {
-        this.debug('Extracted conversation ID (simple):', simpleMatch[0]);
-        return simpleMatch[0];
-      }
+    // DeepSeek: 从 href 属性提取 UUID 格式的对话 ID
+    const href = element.getAttribute('href') || '';
+    const id = extractConversationId(href);
+    
+    if (id) {
+      this.debug('提取到对话ID:', id);
+      return id;
     }
 
-    // Fallback: generate unique ID from element attributes
-    // Use multiple attributes to ensure uniqueness
-    const title = element.querySelector('.conversation-title')?.textContent?.trim() || '';
+    // Fallback: 生成唯一ID
+    const title = element.textContent?.trim() || '';
     const index = Array.from(element.parentElement?.children || []).indexOf(element);
-
-    // Generate unique ID combining title, index, random, and timestamp
     const uniqueString = `${title}_${index}_${Math.random()}_${Date.now()}`;
     const fallbackId = `conv_${this.hashString(uniqueString)}`;
-    this.debugWarn('Could not extract ID from jslog, using fallback:', fallbackId);
+    this.debugWarn('无法从href提取ID，使用后备方案:', fallbackId);
     return fallbackId;
   }
 
   private extractConversationData(element: HTMLElement): { url: string; isGem: boolean; gemId?: string } {
-    // Extract conversation ID from jslog
-    const jslog = element.getAttribute('jslog');
-    if (!jslog) {
-      return { url: window.location.href, isGem: false };
+    // DeepSeek: 从 href 属性提取完整 URL
+    const href = element.getAttribute('href') || '';
+    const conversationId = extractConversationId(href);
+    
+    if (conversationId) {
+      const url = buildConversationUrl(conversationId);
+      this.debug('构建的URL:', url);
+      return { url, isGem: false };
     }
 
-    // Match conversation ID from jslog - extract just the hex part without c_ prefix
-    const match = jslog.match(/[",\[]c_([a-f0-9]+)[",\]]/);
-    if (!match) {
-      return { url: window.location.href, isGem: false };
-    }
-
-    const hexId = match[1]; // Just the hex part, e.g., "9bf19194f9afaf90"
-    this.debug('Extracted hex ID:', hexId);
-
-    const currentPath = window.location.pathname;
-
-    // Preserve user account number (e.g., /u/1/)
-    const userMatch = currentPath.match(/\/u\/(\d+)\//);
-
-    // Build URL with user context preserved
-    let url = window.location.origin;
-    if (userMatch) {
-      url += `/u/${userMatch[1]}`;
-    }
-
-    // Always use /app/{id} URL
-    // Gemini will auto-redirect to /gem/{gem-id}/{id} if it's a Gem conversation
-    // We'll detect and update the gemId after navigation completes
-    url += `/app/${hexId}`;
-
-    // Also preserve URL parameters
-    const currentUrl = new URL(window.location.href);
-    const searchParams = currentUrl.searchParams.toString();
-    if (searchParams) {
-      url += `?${searchParams}`;
-    }
-
-    this.debug('Built URL:', url);
-    // Don't try to detect if it's a Gem at drag time - just store the /app/ URL
-    // After first navigation, we'll detect and update to the correct /gem/ URL
-    return { url, isGem: false, gemId: undefined };
+    // Fallback
+    return { url: window.location.href, isGem: false };
   }
 
   private setupMutationObserver(): void {
@@ -774,7 +721,8 @@ export class FolderManager {
         // Handle added conversations
         mutation.addedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            const conversations = node.querySelectorAll('[data-test-id="conversation"]');
+            // DeepSeek: 查找新添加的对话链接
+            const conversations = tryFindElements(DEEPSEEK_SELECTORS.conversationItem, node);
             conversations.forEach((conv) => this.makeConversationDraggable(conv as HTMLElement));
           }
         });
@@ -782,33 +730,19 @@ export class FolderManager {
         // Handle removed conversations
         mutation.removedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            // Check if this is a conversation element or contains conversations
-            const conversations = node.matches('[data-test-id="conversation"]')
+            // DeepSeek: 检查是否是对话元素
+            const isConversation = node.matches?.(DEEPSEEK_SELECTORS.conversationItem.primary);
+            const conversations = isConversation
               ? [node]
-              : Array.from(node.querySelectorAll('[data-test-id="conversation"]'));
+              : Array.from(tryFindElements(DEEPSEEK_SELECTORS.conversationItem, node));
 
             conversations.forEach((conv) => {
-              // Extract conversation ID from the removed element
-              const jslog = conv.getAttribute('jslog');
-              if (jslog) {
-                const match = jslog.match(/c_([a-f0-9]{8,})/i);
-                if (match && match[1]) {
-                  const conversationId = match[1];
-                  this.debug('Detected conversation deletion:', conversationId);
-                  // Remove this conversation from all folders
-                  this.removeConversationFromAllFolders(conversationId);
-                }
-              }
-
-              // Also try to extract from href
-              const link = conv.querySelector('a[href*="/app/"], a[href*="/gem/"]') as HTMLAnchorElement | null;
-              if (link) {
-                const href = link.href;
-                const appMatch = href.match(/\/app\/([^\/?#]+)/);
-                const gemMatch = href.match(/\/gem\/[^/]+\/([^\/?#]+)/);
-                const conversationId = appMatch?.[1] || gemMatch?.[1];
+              // 从 href 提取对话 ID
+              const href = (conv as HTMLElement).getAttribute('href');
+              if (href) {
+                const conversationId = extractConversationId(href);
                 if (conversationId) {
-                  this.debug('Detected conversation deletion (from href):', conversationId);
+                  this.debug('检测到对话删除:', conversationId);
                   this.removeConversationFromAllFolders(conversationId);
                 }
               }
@@ -883,12 +817,12 @@ export class FolderManager {
 
     const saveBtn = document.createElement('button');
     saveBtn.className = 'gv-folder-inline-btn gv-folder-inline-save';
-    saveBtn.innerHTML = '<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">check</mat-icon>';
+    saveBtn.appendChild(createIcon('check'));
     saveBtn.title = this.t('pm_save');
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'gv-folder-inline-btn gv-folder-inline-cancel';
-    cancelBtn.innerHTML = '<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">close</mat-icon>';
+    cancelBtn.appendChild(createIcon('close'));
     cancelBtn.title = this.t('pm_cancel');
 
     inputContainer.appendChild(input);
@@ -975,11 +909,11 @@ export class FolderManager {
 
     const saveBtn = document.createElement('button');
     saveBtn.className = 'gv-folder-inline-btn gv-folder-inline-save';
-    saveBtn.innerHTML = '<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">check</mat-icon>';
+    saveBtn.appendChild(createIcon('check'));
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'gv-folder-inline-btn gv-folder-inline-cancel';
-    cancelBtn.innerHTML = '<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">close</mat-icon>';
+    cancelBtn.appendChild(createIcon('close'));
 
     inputContainer.appendChild(input);
     inputContainer.appendChild(saveBtn);
@@ -1459,11 +1393,7 @@ export class FolderManager {
         folderItem.style.paddingLeft = `${level * 16 + 12}px`;
 
         // Folder icon
-        const icon = document.createElement('mat-icon');
-        icon.className = 'mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color';
-        icon.setAttribute('role', 'img');
-        icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = 'folder';
+        const icon = createIcon('folder', 'gv-folder-icon');
 
         // Folder name
         const name = document.createElement('span');
@@ -1696,27 +1626,10 @@ export class FolderManager {
       url = this.extractNativeConversationUrl(conversationEl);
     }
 
-    // Additional fallbacks when info is still missing
-    if (!conversationId) {
-      // Try to parse hex id from the overlay menu itself
-      const hexFromMenu = this.extractHexIdFromMenu(menuContent);
-      if (hexFromMenu) {
-        conversationId = hexFromMenu;
-        this.debug('injectMoveToFolderButton: using id from menu jslog', conversationId);
-      } else if (this.lastClickedConversation) {
-        // Try from jslog on the conversation element tree
-        const hexFromJslog = this.extractHexIdFromJslog(this.lastClickedConversation);
-        if (hexFromJslog) {
-          conversationId = hexFromJslog;
-          this.debug('injectMoveToFolderButton: using id from conversation jslog', conversationId);
-        }
-      }
-    }
-
-    // If URL is missing but we have an id, synthesize a best-effort URL
+    // DeepSeek: 如果仍然缺少信息，使用后备方案
     if (!url && conversationId) {
-      url = this.buildConversationUrlFromId(conversationId);
-      this.debug('injectMoveToFolderButton: built fallback URL from id', url);
+      url = buildConversationUrl(conversationId);
+      this.debug('injectMoveToFolderButton: 从ID构建URL', url);
     }
 
     // Title fallback
@@ -1740,12 +1653,7 @@ export class FolderManager {
     menuItem.setAttribute('aria-disabled', 'false');
 
     // Icon
-    const icon = document.createElement('mat-icon');
-    icon.className = 'mat-icon notranslate gds-icon-l google-symbols mat-ligature-font mat-icon-no-color';
-    icon.setAttribute('role', 'img');
-    icon.setAttribute('fonticon', 'folder_open');
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = 'folder_open';
+    const icon = createIcon('folder_open', 'gv-menu-icon');
 
     // Text
     const textSpan = document.createElement('span');
@@ -1921,133 +1829,65 @@ export class FolderManager {
   }
 
   private extractNativeConversationId(conversationEl: HTMLElement): string | null {
-    // Support both /app/<hexId> and /gem/<gemId>/<hexId>
-    const scope = (conversationEl.closest('[data-test-id="conversation"]') as HTMLElement) || conversationEl;
-
-    // Get all conversation links
-    const links = scope.querySelectorAll('a[href*="/app/"], a[href*="/gem/"]');
-
-    if (links.length === 0) {
-      this.debugWarn('extractId: no conversation link found under scope');
-      // Fallback to jslog parsing on the conversation element tree
-      const hex = this.extractHexIdFromJslog(scope);
-      if (hex) return hex;
-      return null;
+    // DeepSeek: 从 href 属性提取 UUID
+    const href = conversationEl.getAttribute('href') || '';
+    const id = extractConversationId(href);
+    
+    if (id) {
+      this.debug('extractId: 提取到', id);
+      return id;
     }
-
-    // If there are multiple links, try to find the most specific one
-    let link: Element;
-    if (links.length > 1) {
-      this.debugWarn(`extractId: found ${links.length} links, attempting to select the most appropriate one`);
-
-      // Strategy 1: Find the link with the smallest bounding box (most likely the actual conversation item)
-      let minArea = Infinity;
-      let bestLink = links[0];
-
-      for (const l of Array.from(links)) {
-        const rect = l.getBoundingClientRect();
-        const area = rect.width * rect.height;
-        if (area > 0 && area < minArea) {
-          minArea = area;
-          bestLink = l;
-        }
-      }
-
-      // If all links have the same size, fall back to the first one
-      link = minArea < Infinity ? bestLink : links[0];
-      this.debug('extractId: selected link with area', minArea);
-    } else {
-      link = links[0];
-    }
-
-    const href = link.getAttribute('href') || '';
-    this.debug('extractId: found link href', href);
-
-    // Try /app/<hexId>
-    let match = href.match(/\/app\/([^\/?#]+)/);
-    if (match && match[1]) {
-      this.debug('extractId: extracted from /app/', match[1]);
-      return match[1];
-    }
-    // Try /gem/<gemId>/<hexId>
-    match = href.match(/\/gem\/[^/]+\/([^\/?#]+)/);
-    if (match && match[1]) {
-      this.debug('extractId: extracted from /gem/', match[1]);
-      return match[1];
-    }
-    this.debugWarn('extractId: failed to extract id from href');
+    
+    this.debugWarn('extractId: 无法从 href 提取 ID');
     return null;
   }
 
   private extractNativeConversationTitle(conversationEl: HTMLElement): string | null {
-    const scope = (conversationEl.closest('[data-test-id="conversation"]') as HTMLElement) || conversationEl;
-    // 1) Known title selectors
-    const titleEl = scope.querySelector('.gds-label-l, .conversation-title-text, [data-test-id="conversation-title"], h3');
-    let title = titleEl?.textContent?.trim() || null;
-    if (title && !this.isGemLabel(title)) {
-      this.debug('extractTitle(selectors):', title);
-      return title;
+    // DeepSeek: 对话标题在链接元素内部
+    const titleEl = tryFindElement(DEEPSEEK_SELECTORS.conversationTitle, conversationEl);
+    if (titleEl) {
+      const title = titleEl.textContent?.trim();
+      if (title) {
+        this.debug('提取标题:', title);
+        return title;
+      }
     }
 
-    // 2) Link attributes
-    const link = scope.querySelector('a[href*="/app/"], a[href*="/gem/"]') as HTMLAnchorElement | null;
-    const aria = link?.getAttribute('aria-label')?.trim();
-    if (aria && !this.isGemLabel(aria)) {
-      this.debug('extractTitle(link aria-label):', aria);
-      return aria;
-    }
-    const linkTitle = link?.getAttribute('title')?.trim();
-    if (linkTitle && !this.isGemLabel(linkTitle)) {
-      this.debug('extractTitle(link title attr):', linkTitle);
-      return linkTitle;
+    // Fallback: 从链接文本提取
+    const linkText = conversationEl.textContent?.trim();
+    if (linkText) {
+      this.debug('从链接文本提取标题:', linkText);
+      return linkText;
     }
 
-    // 3) Parse visible text from link (ignore icons and gem labels)
-    const fromLinkText = this.extractTitleFromLinkText(link || undefined);
-    if (fromLinkText) {
-      this.debug('extractTitle(link text):', fromLinkText);
-      return fromLinkText;
+    // Fallback: 从 aria-label 提取
+    const ariaLabel = conversationEl.getAttribute('aria-label')?.trim();
+    if (ariaLabel) {
+      this.debug('从 aria-label 提取标题:', ariaLabel);
+      return ariaLabel;
     }
 
-    // 4) Fallbacks on common labels
-    title = this.extractFallbackTitle(scope);
-    if (title && !this.isGemLabel(title)) {
-      this.debug('extractTitle(fallback):', title);
-      return title;
-    }
-
-    this.debug('extractTitle: null');
+    this.debug('无法提取标题');
     return null;
   }
 
   private syncConversationTitleFromNative(conversationId: string): string | null {
     try {
-      // Try to find the conversation in the native sidebar by its ID
-      const conversations = document.querySelectorAll('[data-test-id="conversation"]');
+      // DeepSeek: 从侧边栏查找对话并提取标题
+      const conversations = tryFindElements(DEEPSEEK_SELECTORS.conversationItem, document);
       for (const convEl of Array.from(conversations)) {
-        // Check if this conversation matches the ID
-        const jslog = convEl.getAttribute('jslog');
-        if (jslog && jslog.includes(conversationId)) {
-          // Found the matching conversation, extract its current title
+        const href = (convEl as HTMLElement).getAttribute('href');
+        if (href && href.includes(conversationId)) {
+          // 找到匹配的对话，提取标题
           const currentTitle = this.extractNativeConversationTitle(convEl as HTMLElement);
           if (currentTitle) {
-            this.debug('Synced title from native:', currentTitle);
-            return currentTitle;
-          }
-        }
-
-        // Also check by href
-        const link = convEl.querySelector('a[href*="/app/"], a[href*="/gem/"]') as HTMLAnchorElement | null;
-        if (link && link.href.includes(conversationId)) {
-          const currentTitle = this.extractNativeConversationTitle(convEl as HTMLElement);
-          if (currentTitle) {
-            this.debug('Synced title from native (by href):', currentTitle);
+            this.debug('从原生侧边栏同步标题:', currentTitle);
             return currentTitle;
           }
         }
       }
     } catch (e) {
-      this.debug('Error syncing title from native:', e);
+      this.debug('同步标题时出错:', e);
     }
     return null;
   }
@@ -2101,97 +1941,28 @@ export class FolderManager {
     }
   }
 
-  private extractHexIdFromJslog(scope: HTMLElement): string | null {
-    try {
-      const tryParse = (val: string | null | undefined): string | null => {
-        if (!val) return null;
-        // Typical pattern inside jslog: c_<hex>
-        const m = val.match(/c_([a-f0-9]{8,})/i);
-        return m?.[1] || null;
-      };
+  // DeepSeek: 不需要这些 Gemini 特定的辅助方法
+  // 已移除: extractHexIdFromJslog, extractHexIdFromMenu, buildConversationUrlFromId
 
-      // Check on scope itself
-      const fromSelf = tryParse(scope.getAttribute('jslog'));
-      if (fromSelf) {
-        this.debug('extractId(jslog self):', fromSelf);
-        return fromSelf;
-      }
-
-      // Search descendants with jslog
-      const nodes = scope.querySelectorAll('[jslog]');
-      for (const n of Array.from(nodes)) {
-        const found = tryParse(n.getAttribute('jslog'));
-        if (found) {
-          this.debug('extractId(jslog descendant):', found);
-          return found;
-        }
-      }
-    } catch (e) {
-      this.debugWarn('extractHexIdFromJslog error:', e);
-    }
-    this.debugWarn('extractId(jslog): not found');
-    return null;
-  }
-
-  private extractHexIdFromMenu(menuContent: HTMLElement): string | null {
-    try {
-      const nodes = menuContent.querySelectorAll('[jslog]');
-      for (const n of Array.from(nodes)) {
-        const val = n.getAttribute('jslog');
-        if (!val) continue;
-        const m = val.match(/c_([a-f0-9]{8,})/i);
-        if (m && m[1]) {
-          this.debug('extractId(menu jslog):', m[1]);
-          return m[1];
-        }
-      }
-    } catch (e) {
-      this.debugWarn('extractHexIdFromMenu error:', e);
-    }
-    this.debugWarn('extractId(menu): not found');
-    return null;
-  }
-
-  private buildConversationUrlFromId(hexId: string): string {
-    try {
-      const path = window.location.pathname;
-      const gemMatch = path.match(/\/gem\/([^\/]+)/);
-      if (gemMatch && gemMatch[1]) {
-        const gemId = gemMatch[1];
-        return `https://gemini.google.com/gem/${gemId}/${hexId}`;
-      }
-    } catch {}
-    return `https://gemini.google.com/app/${hexId}`;
-  }
-
+  // DeepSeek: 简化的备用标题提取方法
   private extractFallbackTitle(conversationEl: HTMLElement): string | null {
     try {
-      const scope = (conversationEl.closest('[data-test-id="conversation"]') as HTMLElement) || conversationEl;
-      // Prefer explicit attributes if present
-      const aria = scope.getAttribute('aria-label');
+      // 尝试从常见属性提取
+      const aria = conversationEl.getAttribute('aria-label');
       if (aria && aria.trim()) {
-        this.debug('fallbackTitle(aria-label):', aria.trim());
         return aria.trim();
       }
-      const titleAttr = scope.getAttribute('title');
+      
+      const titleAttr = conversationEl.getAttribute('title');
       if (titleAttr && titleAttr.trim()) {
-        this.debug('fallbackTitle(title attr):', titleAttr.trim());
         return titleAttr.trim();
       }
-      // Try a common inner label
-      const label = scope.querySelector('.gds-body-m, .gds-label-m, .subtitle');
-      const labelText = label?.textContent?.trim();
-      if (labelText && !this.isGemLabel(labelText)) {
-        this.debug('fallbackTitle(label-ish):', labelText);
-        return labelText;
-      }
-      // Fall back to trimmed text content (first line, clipped)
-      const raw = scope.textContent?.trim() || '';
-      if (raw) {
-        const firstLine = raw.split('\n').map((s) => s.trim()).filter(Boolean)[0] || raw;
-        const clipped = firstLine.slice(0, 80);
-        this.debug('fallbackTitle(textContent):', clipped);
-        return clipped;
+      
+      // 从文本内容提取
+      const text = conversationEl.textContent?.trim() || '';
+      if (text) {
+        const firstLine = text.split('\n')[0]?.trim() || text;
+        return firstLine.slice(0, 80);
       }
     } catch (e) {
       this.debugWarn('extractFallbackTitle error:', e);
@@ -2199,56 +1970,15 @@ export class FolderManager {
     return null;
   }
 
-  private isGemLabel(text: string): boolean {
-    const t = (text || '').trim();
-    if (!t) return false;
-    const simple = t.toLowerCase();
-    // Generic labels we want to ignore
-    if (simple === 'gem' || simple === 'gems') return true;
-    // Known Gem names (English)
-    for (const g of GEM_CONFIG) {
-      if (simple === g.name.toLowerCase()) return true;
-    }
-    return false;
-  }
-
-  private extractTitleFromLinkText(link?: HTMLAnchorElement | null): string | null {
-    if (!link) return null;
-    // Get visible textual lines from the link
-    const text = (link.innerText || '').trim();
-    if (!text) return null;
-    const parts = text.split('\n')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .filter(s => !this.isGemLabel(s))
-      .filter(s => s.length >= 2);
-    this.debug('extractTitleFromLinkText parts:', parts);
-    if (parts.length === 0) return null;
-    // Heuristic: pick the longest part
-    const best = parts.reduce((a, b) => (b.length > a.length ? b : a), parts[0]);
-    return best || null;
-  }
-
   private extractNativeConversationUrl(conversationEl: HTMLElement): string | null {
-    const scope = (conversationEl.closest('[data-test-id="conversation"]') as HTMLElement) || conversationEl;
-    const link = scope.querySelector('a[href*="/app/"], a[href*="/gem/"]');
-    if (!link) {
-      this.debugWarn('extractUrl: no conversation link found under scope');
-      // Fallback: construct from extracted id (via jslog) if possible
-      const hex = this.extractHexIdFromJslog(scope);
-      if (hex) {
-        const fullFromJslog = this.buildConversationUrlFromId(hex);
-        this.debug('extractUrl(jslog fallback):', fullFromJslog);
-        return fullFromJslog;
-      }
-      return null;
-    }
-    const href = link.getAttribute('href');
+    // DeepSeek: 对话元素本身就是链接
+    const href = conversationEl.getAttribute('href');
     if (!href) {
-      this.debugWarn('extractUrl: link has no href');
+      this.debugWarn('extractUrl: no href found');
       return null;
     }
-    const full = href.startsWith('http') ? href : `https://gemini.google.com${href}`;
+    
+    const full = href.startsWith('http') ? href : `https://chat.deepseek.com${href}`;
     this.debug('extractUrl:', full);
     return full;
   }
@@ -2316,40 +2046,34 @@ export class FolderManager {
   }
 
   private navigateToConversation(url: string, conversation?: ConversationReference): void {
-    // Use History API to navigate without page reload (SPA-style)
-    // This mimics how Gemini's original conversation links work
+    // DeepSeek: 使用 SPA 风格导航
     try {
-      // Try to find and click the original conversation element in the sidebar
-      // This is the most reliable way to trigger Gemini's navigation
       const targetUrl = new URL(url);
-      const pathParts = targetUrl.pathname.split('/');
-      const hexId = pathParts[pathParts.length - 1]; // Get the hex ID part
+      const conversationId = extractConversationId(targetUrl.pathname);
 
-      const conversations = document.querySelectorAll('[data-test-id="conversation"]');
+      if (!conversationId) {
+        this.debug('无法从URL提取对话ID:', url);
+        window.location.href = url;
+        return;
+      }
+
+      // 尝试找到并点击侧边栏的对话链接
+      const conversations = tryFindElements(DEEPSEEK_SELECTORS.conversationItem, this.sidebarContainer!);
       for (const conv of Array.from(conversations)) {
-        const jslog = conv.getAttribute('jslog');
-        if (jslog && jslog.includes(hexId)) {
-          // Found the matching conversation, click it
-          // This will trigger SPA navigation, even if there's a brief redirect for gems
+        const href = (conv as HTMLElement).getAttribute('href');
+        if (href && href.includes(conversationId)) {
+          // 找到匹配的对话，点击它触发导航
           (conv as HTMLElement).click();
-          this.debug('Navigated by clicking sidebar element');
+          this.debug('通过点击侧边栏元素导航');
 
-          // After navigation, sync title and check for gem updates
+          // 导航后同步标题
           setTimeout(() => {
-            // Sync title from native conversation
             if (conversation) {
-              const syncedTitle = this.syncConversationTitleFromNative(hexId);
+              const syncedTitle = this.syncConversationTitleFromNative(conversationId);
               if (syncedTitle && syncedTitle !== conversation.title) {
-                this.updateConversationTitle(hexId, syncedTitle);
-                this.debug('Updated conversation title after navigation:', syncedTitle);
+                this.updateConversationTitle(conversationId, syncedTitle);
+                this.debug('导航后更新对话标题:', syncedTitle);
               }
-            }
-
-            // Check if URL changed (Gemini auto-redirected to /gem/)
-            if (conversation && !conversation.gemId) {
-              this.checkAndUpdateGemId(hexId);
-            } else if (conversation?.gemId) {
-              this.debug('Known gem conversation:', conversation.gemId);
             }
           }, 300);
 
@@ -2357,69 +2081,28 @@ export class FolderManager {
         }
       }
 
-      // If we can't find the sidebar element, try pushState + popstate
-      this.debug('Sidebar element not found, trying pushState');
+      // 如果找不到侧边栏元素，使用 History API
+      this.debug('未找到侧边栏元素，尝试使用 pushState');
       window.history.pushState({}, '', url);
-      const popStateEvent = new PopStateEvent('popstate', { state: {} });
-      window.dispatchEvent(popStateEvent);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
 
-      // If that doesn't work, fall back to page reload
+      // 如果 pushState 不生效，回退到完整页面跳转
       setTimeout(() => {
         if (window.location.pathname !== targetUrl.pathname) {
-          this.debug('Falling back to page reload');
+          this.debug('回退到完整页面跳转');
           window.location.href = url;
         }
       }, 200);
     } catch (error) {
-      console.error('[FolderManager] Navigation error:', error);
-      // Fallback to regular navigation
+      console.error('[FolderManager] 导航错误:', error);
       window.location.href = url;
     }
   }
 
+  // DeepSeek: 不需要此方法，因为没有 Gem 功能
+  // 保留空实现以避免破坏现有代码
   private checkAndUpdateGemId(hexId: string): void {
-    // Wait for navigation to complete and check if URL changed
-    setTimeout(() => {
-      const currentPath = window.location.pathname;
-      this.debug('Checking URL after navigation:', currentPath);
-
-      // If URL changed from /app/ to /gem/, update the stored gemId
-      if (currentPath.includes('/gem/')) {
-        const gemMatch = currentPath.match(/\/gem\/([^\/]+)/);
-        if (gemMatch) {
-          const gemId = gemMatch[1];
-          this.debug('Detected Gem after navigation:', gemId);
-
-          // Update all instances of this conversation in folders
-          let updated = false;
-
-          for (const folderId in this.data.folderContents) {
-            const conversations = this.data.folderContents[folderId];
-            for (const conv of conversations) {
-              // Match by hex ID in URL
-              if (conv.url.includes(hexId)) {
-                const oldUrl = conv.url;
-                conv.isGem = true;
-                conv.gemId = gemId;
-                // Update URL to use /gem/ instead of /app/
-                conv.url = conv.url.replace(/\/app\/([^/?]+)/, `/gem/${gemId}/$1`);
-                updated = true;
-                this.debug('Updated conversation:', conv.title);
-                this.debug('Old URL:', oldUrl);
-                this.debug('New URL:', conv.url);
-                this.debug('Gem ID:', gemId);
-              }
-            }
-          }
-
-          if (updated) {
-            this.saveData();
-            // Re-render folders to show correct icon
-            this.renderAllFolders();
-          }
-        }
-      }
-    }, 500); // Wait 500ms for navigation to complete
+    // DeepSeek does not have Gem feature, method kept for compatibility
   }
 
   private renderAllFolders(): void {

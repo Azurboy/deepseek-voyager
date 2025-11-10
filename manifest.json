@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Voyager",
-  "description": "Supercharge your Gemini experience with timeline navigation, folder organization, prompt library, and chat export.",
-  "version": "0.7.7",
+  "name": "DeepSeek Voyager",
+  "description": "Supercharge your DeepSeek experience with timeline navigation, folder organization, and chat export.",
+  "version": "0.1.0",
   "action": {
     "default_popup": "src/pages/popup/index.html",
     "default_icon": {
@@ -16,9 +16,7 @@
     "storage"
   ],
   "host_permissions": [
-    "https://*.googleusercontent.com/*",
-    "https://lh3.google.com/*",
-    "https://*.ggpht.com/*"
+    "https://chat.deepseek.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'"
@@ -30,8 +28,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://gemini.google.com/*",
-        "https://aistudio.google.com/*"
+        "https://chat.deepseek.com/*"
       ],
       "js": [
         "src/pages/content/index.tsx"
@@ -49,8 +46,7 @@
         "icon-32.png"
       ],
       "matches": [
-        "https://gemini.google.com/*",
-        "https://aistudio.google.com/*"
+        "https://chat.deepseek.com/*"
       ]
     }
   ]

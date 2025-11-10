@@ -1,275 +1,221 @@
-<div align="center">
-  <img src="public/icon-128.png" alt="logo"/>
-  <h1>Gemini Voyager</h1>
-  <h3>Supercharge Your Gemini Experience ✨</h3>
-  <p>Navigate conversations with an elegant timeline, organize chats with folders, and save your favorite prompts—all in one powerful extension.</p>
-  
-  <p>
-    <img src="https://img.shields.io/badge/Chrome-✓-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Chrome">
-    <img src="https://img.shields.io/badge/Edge-✓-0078D7?style=flat-square&logo=microsoftedge&logoColor=white" alt="Edge">
-    <img src="https://img.shields.io/badge/Firefox-✓-FF7139?style=flat-square&logo=firefox&logoColor=white" alt="Firefox">
-    <img src="https://img.shields.io/badge/Safari-✓-000000?style=flat-square&logo=safari&logoColor=white" alt="Safari">
-    <img src="https://img.shields.io/badge/Opera-✓-FF1B2D?style=flat-square&logo=opera&logoColor=white" alt="Opera">
-    <img src="https://img.shields.io/badge/Brave-✓-FB542B?style=flat-square&logo=brave&logoColor=white" alt="Brave">
-  </p>
-</div>
+# DeepSeek Voyager
 
-<p align="center">
-  <a href="./.github/README_ZH.md">中文说明</a>
-</p>
+> 🚀 **DeepSeek适配版** - 为 [DeepSeek](https://chat.deepseek.com) 量身定制的对话增强工具
+
+[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://github.com/Azurboy/gemini-voyager)
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+
+本项目改编自 **[Gemini Voyager](https://github.com/Nagi-ovo/gemini-voyager)** by Jesse Zhang，专门适配 DeepSeek AI 聊天平台。
 
 ---
 
-## Features
+## ✨ 功能特性
 
-<div align="center">
-  <img src="public/teaser.png" alt="teaser"/>
-</div>
+### ✅ 已实现功能
 
-### 📍 Timeline Navigation
+#### 📂 文件夹管理
+- 创建文件夹和子文件夹（两层级）
+- 拖拽对话到文件夹
+- 重命名、复制、删除文件夹
+- 固定常用文件夹（订书钉标记）
+- 文件夹数据导入/导出（跨设备同步）
+- 点击对话快速跳转（SPA导航）
 
-Visual conversation navigation with clickable message nodes:
-- Click nodes to jump to messages
-- Hover for message preview
-- Long-press to star important messages (synced across tabs)
-- Draggable timeline position
-- Auto-syncs with scroll position
+#### 💾 对话导出
+- 导出为 JSON 格式
+- 导出为 Markdown/PDF（含图片打包）
+- 保留对话结构和标记
 
-### 📂 Folder Organization
+### 🚧 开发中功能
 
-Manage conversations with drag-and-drop folders:
-- Two-level hierarchy (folders and subfolders)
-- Right-click menu for rename/duplicate/delete
-- Auto-detects Gem types and displays corresponding icons
-- Local storage, shared across Gemini accounts (u/0, u/1, etc.)
-- Instant navigation without page reloads
-- Import/export for cross-device sync ([guide](.github/docs/IMPORT_EXPORT_GUIDE.md))
+#### 📍 时间轴导航（Timeline）
+> 此功能正在积极开发中，敬请期待！
 
-### 💡 Prompt Library
+---
 
-Save and reuse prompts:
-- Tag-based organization
-- Keyword search
-- Import/export as JSON
-- Available on Gemini and AI Studio
+## 📥 安装使用
 
-### 📐 Formula Copy
+### 方式1：手动安装（推荐）
 
-Click LaTeX/MathJax formulas to copy source code:
-- One-click copy of formula source
-- Works with inline and display math
-- Visual feedback on copy success
+#### Chrome/Edge/Brave等Chromium浏览器
 
-### 💾 Chat Export (JSON + Markdown/PDF)
+1. **下载项目**
+   ```bash
+   git clone https://github.com/Azurboy/gemini-voyager.git
+   cd gemini-voyager
+   ```
 
-Export conversations as:
-- Structured JSON
-- Markdown/PDF (images auto-packaged into `assets/`, print-friendly)
-- Click export icon next to Gemini logo
-- Preserves starred messages
-- Removes UI noise (labels like "Show thinking")
+2. **安装依赖**
+   ```bash
+   npm install --legacy-peer-deps
+   ```
 
-<details>
-<summary>Export format example</summary>
+3. **构建扩展**
+   ```bash
+   npm run build:chrome
+   ```
 
-```json
-{
-  "format": "gemini-voyager.chat.v1",
-  "url": "https://gemini.google.com/app/...",
-  "exportedAt": "2025-01-01T12:34:56.000Z",
-  "count": 3,
-  "items": [
-    { "user": "...", "assistant": "...", "starred": true }
-  ]
-}
+4. **加载到浏览器**
+   - 打开 `chrome://extensions`
+   - 开启"开发者模式"
+   - 点击"加载已解压的扩展程序"
+   - 选择 `dist_chrome` 文件夹
+
+5. **完成！** 访问 https://chat.deepseek.com 即可使用
+
+#### Firefox
+
+1. 构建Firefox版本
+   ```bash
+   npm run build:firefox
+   ```
+
+2. 打开 `about:debugging#/runtime/this-firefox`
+
+3. 点击"临时载入附加组件"
+
+4. 选择 `dist_firefox/manifest.json`
+
+---
+
+## 🎯 功能演示
+
+### 文件夹管理
 ```
-</details>
+📚 Folders  [导入] [导出] [添加]
 
-### 📏 Adjustable Chat Width
+  ▶ 📁 工作项目   📎 ⋮
+  ▼ 📁 学习资料   📎 ⋮
+    💬 Python教程 ✕
+    💬 数据结构  ✕
+  ▶ 📁 日常对话   📎 ⋮
+```
 
-Customize chat container width (400px - 1400px) with real-time preview.
-
-> **Settings**: Click the extension icon for scroll mode, chat width, and timeline options.
-
----
-
-## 📥 Installation
-
-> **⚠️ Recommended:** Download the latest version from [GitHub Releases](https://github.com/Nagi-ovo/gemini-voyager/releases)  
-> The Chrome Web Store version may lag behind due to review delays.
-
-### Option 1: Manual Installation (Recommended)
-
-**For Chromium browsers (Chrome, Edge, Opera, Brave, Vivaldi, Arc):**
-
-1. Go to the [repository Releases page](https://github.com/Nagi-ovo/gemini-voyager/releases) and download the latest `gemini-voyager-chrome-vX.Y.Z.zip`
-2. Unzip it to a folder (you will see `manifest.json` at the root)
-3. Open your extensions page and enable Developer mode:
-   - Chrome: `chrome://extensions`
-   - Edge: `edge://extensions`
-   - Opera: `opera://extensions`
-4. Click "Load unpacked"
-5. Select the unzipped folder
-
-<details>
-<summary>Firefox Installation</summary>
-
-1. Go to the [repository Releases page](https://github.com/Nagi-ovo/gemini-voyager/releases) and download `gemini-voyager-firefox-vX.Y.Z.zip`
-2. Unzip it
-3. Open `about:debugging#/runtime/this-firefox` in Firefox
-4. Click "Load Temporary Add-on…"
-5. Select the `manifest.json` inside the unzipped folder
-</details>
-
-<details>
-<summary>Safari Installation</summary>
-
-1. Download `gemini-voyager-safari-vX.Y.Z.zip` from [Releases](https://github.com/Nagi-ovo/gemini-voyager/releases)
-2. Unzip and convert: `xcrun safari-web-extension-converter dist_safari --macos-only --app-name "Gemini Voyager"`
-3. Open in Xcode and run (⌘R)
-4. Enable in Safari → Settings → Extensions
-
-**Requirements:** macOS 11+, Xcode Command Line Tools (`xcode-select --install`), Safari 14+
-
-**Note:** No Apple Developer account needed for local use! For detailed instructions, see the [installation guide](.github/docs/safari/INSTALLATION.md) ([中文](.github/docs/safari/INSTALLATION_ZH.md)).
-</details>
-
-### Option 2: Chrome Web Store (Easier but may be outdated)
-
-<div align="center">
-  <a href="https://chromewebstore.google.com/detail/kjdpnimcnfinmilocccippmododhceol?utm_source=item-share-cb" target="_blank">
-    <img src="https://img.shields.io/badge/Install%20from-Chrome%20Web%20Store-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Install from Chrome Web Store" height="50">
-  </a>
-</div>
-
-The easiest installation method, but may not have the latest features:
-
-1. Click the button above to visit the Chrome Web Store
-2. Click "Add to Chrome"
-3. The extension will activate automatically on Gemini
-
-**Works on:** Chrome, Edge, Opera, Brave, Vivaldi, Arc, and other Chromium browsers
-
-<details>
-<summary>Installation tips for Edge and Opera users</summary>
-
-**For Microsoft Edge users:**
-1. Visit Chrome Web Store via the button above
-2. You'll see a prompt "Allow extensions from other stores"
-3. Click "Allow" and install normally
-
-**For Opera users:**
-1. First install [Install Chrome Extensions](https://addons.opera.com/extensions/details/install-chrome-extensions/) (official Opera extension)
-2. Then visit Chrome Web Store
-3. Install like you would on Chrome
-
-**For Brave, Vivaldi, Arc, and other Chromium browsers:**  
-No extra steps needed—just install directly from Chrome Web Store!
-</details>
+- **拖拽**：从侧边栏拖动对话到文件夹
+- **导航**：点击文件夹内的对话快速跳转
+- **管理**：右键菜单支持重命名、复制、删除
+- **固定**：点击订书钉📎固定常用文件夹
 
 ---
 
-## 🛠️ For Developers
+## 🔧 开发指南
 
-<details>
-<summary>Click to see development setup instructions</summary>
-
-Want to contribute or customize the extension? Here's how to set up the development environment:
-
+### 开发模式
 ```bash
-# Install dependencies (Bun recommended)
-bun i
+# Chrome开发模式（支持热重载）
+npm run dev:chrome
 
-# Development mode (with auto-reload)
-bun run dev:chrome   # Chrome & Chromium browsers
-bun run dev:firefox  # Firefox
-bun run dev:safari   # Safari (requires macOS)
-
-# Production builds
-bun run build:chrome   # Chrome
-bun run build:firefox  # Firefox
-bun run build:safari   # Safari
-bun run build:all      # All browsers
+# Firefox开发模式
+npm run dev:firefox
 ```
 
-Or with npm/pnpm:
+### 生产构建
 ```bash
-pnpm install
-pnpm run dev:chrome    # Chrome
-pnpm run dev:firefox   # Firefox
-pnpm run dev:safari    # Safari (macOS only)
+# 构建Chrome版本
+npm run build:chrome
+
+# 构建Firefox版本
+npm run build:firefox
+
+# 构建所有版本
+npm run build:all
 ```
 
-### Safari Development
-
-Safari requires additional build steps. See [safari/README.md](safari/README.md) for:
-- Building from source
-- Development workflow with auto-reload
-- Adding Swift native code
-- Debugging and distribution
-
-For contribution guidelines and best practices, see [CONTRIBUTING.md](./.github/CONTRIBUTING.md).
-</details>
-
----
-
-## 🙏 Credits
-
-Inspired by [ChatGPT Conversation Timeline](https://github.com/Reborn14/chatgpt-conversation-timeline). We adapted the timeline concept for Gemini and added extensive new features including folder management, prompt library, and chat export.
-
-
-## 🤝 Contributing
-
-We welcome contributions! Whether you want to report bugs, suggest features, improve documentation, or submit code:
-
-- **Issues**: Use our [bug report](https://github.com/Nagi-ovo/gemini-voyager/blob/main/.github/ISSUE_TEMPLATE/bug_report.md) or [feature request](https://github.com/Nagi-ovo/gemini-voyager/blob/main/.github/ISSUE_TEMPLATE/feat_request.md) templates
-- **Pull Requests**: Check out [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for guidelines
-
-Thank you for helping make Gemini Voyager better! ❤️
+### 项目结构
+```
+src/
+├── pages/
+│   ├── content/          # 内容脚本
+│   │   ├── deepseek/     # DeepSeek特定配置
+│   │   │   └── selectors.ts  # DOM选择器
+│   │   ├── folder/       # 文件夹功能
+│   │   │   ├── manager.ts
+│   │   │   └── icons.ts  # SVG图标库
+│   │   ├── timeline/     # 时间轴功能（开发中）
+│   │   └── export/       # 导出功能
+│   ├── popup/            # 弹出窗口
+│   └── background/       # 后台脚本
+├── components/           # React组件
+└── utils/                # 工具函数
+```
 
 ---
 
-## ☕ Support This Project
+## 🌟 技术亮点
 
-If you find **Gemini Voyager** helpful and want to support its development, consider buying me a coffee! Your support helps keep this project alive and growing.
+### 针对DeepSeek的优化
+
+1. **稳定的DOM选择器**
+   - 使用 `href` 属性模式匹配（`a[href*="/a/chat/s/"]`）
+   - 多层级后备选择器策略
+   - 适配DeepSeek的UUID格式对话ID
+
+2. **完全离线的SVG图标**
+   - 不依赖Google Fonts（避免国内访问问题）
+   - Material Design风格，视觉统一
+   - 内嵌SVG，加载极快
+
+3. **SPA导航优化**
+   - History API无缝跳转
+   - 保持单页应用体验
+   - 自动同步侧边栏状态
+
+4. **存储隔离**
+   - 独立的localStorage键名
+   - 不与Gemini版本冲突
+   - 支持跨标签页同步
+
+---
+
+## ⚠️ 已知限制
+
+### DeepSeek DOM结构依赖
+DeepSeek网站使用了部分混淆类名，虽然本扩展已尽量使用稳定的选择器，但如果DeepSeek进行重大更新，可能需要适配。
+
+**如遇到问题，请提供：**
+1. 浏览器控制台错误信息
+2. DeepSeek当前的DOM结构（F12检查元素）
+3. 问题复现步骤
+
+---
+
+## 📝 更新日志
+
+### v0.1.0 (2025-11-10)
+- ✅ 完成文件夹管理功能
+- ✅ 完成对话导出功能
+- ✅ 适配DeepSeek的DOM结构和URL格式
+- ✅ 实现SVG图标系统（完全离线）
+- ✅ 优化UI/UX（书架图标、订书钉固定）
+- 🚧 时间轴功能开发中
+
+---
+
+## 🙏 致谢
+
+本项目改编自 [Gemini Voyager](https://github.com/Nagi-ovo/gemini-voyager)，感谢原作者 **Jesse Zhang** 的优秀工作！
+
+原项目为Google Gemini设计，本分支专注于DeepSeek平台的适配。
+
+---
+
+## 📄 开源协议
+
+MIT License
+
+本项目基于原项目的MIT协议继续开源。
+
+---
+
+## 🔗 相关链接
+
+- **原项目**: [Gemini Voyager](https://github.com/Nagi-ovo/gemini-voyager)
+- **DeepSeek官网**: [https://chat.deepseek.com](https://chat.deepseek.com)
+- **问题反馈**: [Issues](https://github.com/Azurboy/gemini-voyager/issues)
+
+---
 
 <div align="center">
-  <a href="https://www.buymeacoffee.com/Nag1ovo" target="_blank">
-    <img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" >
-  </a>
-</div>
-
-<div align="center">
-  <p><b>Or support via WeChat / Alipay:</b></p>
-  <table>
-    <tr>
-      <td align="center">
-        <img src="public/wechat-sponsor.png" alt="WeChat Pay" width="200"><br>
-        <sub><b>WeChat Pay</b></sub>
-      </td>
-      <td align="center">
-        <img src="public/alipay-sponsor.jpg" alt="Alipay" width="200"><br>
-        <sub><b>Alipay</b></sub>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
-## Star History
-
-<a href="https://www.star-history.com/#Nagi-ovo/gemini-voyager&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Nagi-ovo/gemini-voyager&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Nagi-ovo/gemini-voyager&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Nagi-ovo/gemini-voyager&type=date&legend=top-left" />
- </picture>
-</a>
-
----
-
-<div align="center">
-  <p>Made with ❤️ for the Gemini community</p>
-  <p>If you find this useful, consider giving us a ⭐ on GitHub!</p>
+  <p>如果这个项目对你有帮助，欢迎 ⭐ Star 支持！</p>
+  <p>Made with ❤️ for DeepSeek Community</p>
 </div>

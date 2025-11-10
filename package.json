@@ -1,12 +1,12 @@
 {
-  "name": "gemini-voyager",
-  "version": "0.7.7",
-  "description": "Supercharge your Gemini experience with timeline navigation, folder organization, prompt library, and chat export.",
+  "name": "deepseek-voyager",
+  "version": "0.1.0",
+  "description": "Supercharge your DeepSeek experience with timeline navigation, folder organization, and chat export.",
   "license": "MIT",
-  "author": "Jesse Zhang",
+  "author": "Zayn",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nagi-ovo/gemini-voyager.git"
+    "url": "https://github.com/yourusername/deepseek-voyager.git"
   },
   "scripts": {
     "build": "vite build --config vite.config.chrome.ts",
