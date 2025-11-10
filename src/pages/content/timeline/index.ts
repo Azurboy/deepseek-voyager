@@ -12,8 +12,15 @@ let routeCheckIntervalId: number | null = null;
 let routeListenersAttached = false;
 let activeObservers: MutationObserver[] = [];
 let cleanupHandlers: (() => void)[] = [];
+let isInitializing = false;
 
 function initializeTimeline(): void {
+  // 防止重复初始化
+  if (isInitializing) {
+    console.log('[Timeline] 已在初始化中，跳过重复调用');
+    return;
+  }
+  
   if (timelineManagerInstance) {
     try {
       timelineManagerInstance.destroy();
@@ -29,10 +36,19 @@ function initializeTimeline(): void {
   try {
     document.getElementById('gemini-timeline-tooltip')?.remove();
   } catch {}
+  
+  isInitializing = true;
   timelineManagerInstance = new TimelineManager();
   timelineManagerInstance
     .init()
-    .catch((err) => console.error('[DeepSeek Voyager] Timeline initialization failed:', err));
+    .then(() => {
+      isInitializing = false;
+      console.log('[Timeline/index] 初始化成功完成');
+    })
+    .catch((err) => {
+      isInitializing = false;
+      console.error('[DeepSeek Voyager] Timeline initialization failed:', err);
+    });
 }
 
 function handleUrlChange(): void {
@@ -40,6 +56,7 @@ function handleUrlChange(): void {
   currentUrl = location.href;
   if (isDeepSeekConversationRoute()) initializeTimeline();
   else {
+    isInitializing = false; // 重置标志
     if (timelineManagerInstance) {
       try {
         timelineManagerInstance.destroy();
@@ -105,8 +122,9 @@ function cleanup(): void {
   });
   cleanupHandlers = [];
 
-  // Reset flag
+  // Reset flags
   routeListenersAttached = false;
+  isInitializing = false;
 }
 
 export function startTimeline(): void {

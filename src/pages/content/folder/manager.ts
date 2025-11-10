@@ -763,44 +763,21 @@ export class FolderManager {
    * Hides folder container when sidebar is collapsed for better UX
    */
   private setupSideNavObserver(): void {
-    const appRoot = document.querySelector('#app-root');
-    if (!appRoot) {
-      this.debugWarn('Could not find #app-root element for sidebar monitoring');
-      return;
-    }
-
-    this.sideNavObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-          this.updateVisibilityBasedOnSideNav();
-        }
-      });
-    });
-
-    this.sideNavObserver.observe(appRoot, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    this.debug('Side nav observer setup complete');
+    // DeepSeek: 侧边栏始终可见，不需要监听切换
+    // Gemini 使用 #app-root 的 'side-nav-open' 类来控制侧边栏
+    // DeepSeek 的侧边栏是固定的，所以跳过这个监听
+    this.debug('DeepSeek: 侧边栏始终可见，跳过切换监听');
   }
 
   /**
    * Check if sidebar is open and update folder container visibility
-   * Sidebar is considered open when #app-root has 'side-nav-open' class
+   * DeepSeek: 侧边栏始终可见，容器始终显示
    */
   private updateVisibilityBasedOnSideNav(): void {
-    const appRoot = document.querySelector('#app-root');
-    if (!appRoot || !this.containerElement) return;
-
-    const isSideNavOpen = appRoot.classList.contains('side-nav-open');
-
-    if (isSideNavOpen) {
+    // DeepSeek 的侧边栏始终可见，容器始终显示
+    if (this.containerElement) {
       this.containerElement.style.display = '';
-      this.debug('Sidebar open - showing folder container');
-    } else {
-      this.containerElement.style.display = 'none';
-      this.debug('Sidebar closed - hiding folder container');
+      this.debug('DeepSeek: 文件夹容器始终显示');
     }
   }
 

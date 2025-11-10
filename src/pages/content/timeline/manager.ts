@@ -119,12 +119,29 @@ export class TimelineManager {
   private onBarPointerDown: ((ev: PointerEvent) => void) | null = null;
   private onBarPointerMove: ((ev: PointerEvent) => void) | null = null;
   private onBarPointerUp: ((ev: PointerEvent) => void) | null = null;
+  private isInitializing = false;
 
   async init(): Promise<void> {
+    if (this.isInitializing) {
+      console.log('[Timeline] 正在初始化中，跳过重复调用');
+      return;
+    }
+    this.isInitializing = true;
+    console.log('[Timeline] 开始初始化');
+    
     const ok = await this.findCriticalElements();
-    if (!ok) return;
+    if (!ok) {
+      this.isInitializing = false;
+      return;
+    }
+    
+    console.log('[Timeline] init: 准备 injectTimelineUI，scrollContainer:', this.scrollContainer ? '✅' : '❌ NULL');
     this.injectTimelineUI();
+    
+    console.log('[Timeline] init: 准备 setupEventListeners，scrollContainer:', this.scrollContainer ? '✅' : '❌ NULL');
     this.setupEventListeners();
+    
+    console.log('[Timeline] init: 准备 setupObservers');
     this.setupObservers();
     this.conversationId = this.computeConversationId();
     this.loadStars();
@@ -176,6 +193,13 @@ export class TimelineManager {
         if (saved === 'flow' || saved === 'jump') this.scrollMode = saved;
       }
     } catch {}
+    
+    // 初始化完成后，立即计算并渲染时间轴节点
+    console.log('[Timeline] init: 准备首次渲染时间轴节点');
+    this.recalculateAndRenderMarkers();
+    
+    this.isInitializing = false;
+    console.log('[Timeline] 初始化完成');
   }
 
   private applyContainerVisibility(): void {
@@ -222,12 +246,14 @@ export class TimelineManager {
       userOverride = localStorage.getItem('deepseekTimelineUserTurnSelector') || '';
     } catch {}
     const defaultCandidates = [
-      // DeepSeek 消息选择器（优先使用稳定的类名）
-      '.ds-message',
-      '[class*="ds-message"]',
-      // 通用备选方案
-      'div[class*="message"]',
-      '[role="article"]',
+      // DeepSeek 用户消息选择器（d29f3d7d 是用户消息的特殊类名）
+      // 优先使用精确的选择器，避免匹配到助手消息
+      '.d29f3d7d.ds-message',
+      '.d29f3d7d',
+      '.ds-message:has(.d29f3d7d)',
+      '.ds-message.d29f3d7d',
+      // 通用备选方案（这些可能会匹配到助手消息，所以放在最后）
+      '[class*="user"][class*="message"]',
       'div[class*="user"]',
       '[data-role="user"]',
     ];
@@ -236,18 +262,28 @@ export class TimelineManager {
       : defaultCandidates;
     let firstTurn: Element | null = null;
     let matchedSelector = '';
+    
+    console.log('[Timeline] 尝试查找用户消息，候选选择器:', candidates);
+    
     for (const sel of candidates) {
+      console.log('[Timeline] 尝试选择器:', sel);
       firstTurn = await this.waitForElement(sel, 4000);
       if (firstTurn) {
         this.userTurnSelector = sel;
         matchedSelector = sel;
+        console.log('[Timeline] ✅ 找到用户消息，使用选择器:', sel);
+        console.log('[Timeline] 用户消息元素:', firstTurn);
         break;
+      } else {
+        console.log('[Timeline] ❌ 选择器未找到元素:', sel);
       }
     }
     if (!firstTurn) {
+      console.log('[Timeline] ⚠️ 所有选择器都失败，使用回退方案');
       this.conversationContainer =
         (document.querySelector('main') as HTMLElement) || (document.body as HTMLElement);
       this.userTurnSelector = defaultCandidates.join(',');
+      console.log('[Timeline] 回退 userTurnSelector:', this.userTurnSelector);
     } else {
       // Scope selection/observers:
       // - Broad scope (main/body) if:
@@ -259,9 +295,9 @@ export class TimelineManager {
         this.conversationContainer =
           (document.querySelector('main') as HTMLElement) || (document.body as HTMLElement);
       } else {
-        const parent = firstTurn.parentElement as HTMLElement | null;
-        if (!parent) return false;
-        this.conversationContainer = parent;
+        // DeepSeek: 先不设置 conversationContainer，等找到滚动容器后再设置
+        // 这样可以确保 conversationContainer 包含所有消息
+        this.conversationContainer = null as any;
       }
       // Persist auto-detected selector for future sessions when no explicit user override exists
       if (!userOverride && matchedSelector) {
@@ -276,20 +312,79 @@ export class TimelineManager {
         } catch {}
       }
     }
-    let p: HTMLElement | null = (firstTurn as HTMLElement) || this.conversationContainer;
-    while (p && p !== document.body) {
-      const st = getComputedStyle(p);
-      if (st.overflowY === 'auto' || st.overflowY === 'scroll') {
-        this.scrollContainer = p;
-        break;
+    // DeepSeek: 查找包含对话内容的滚动容器
+    // 策略：从第一个用户消息向上查找，找到最近的 .ds-scroll-area
+    let dsScrollArea: HTMLElement | null = null;
+    
+    if (firstTurn) {
+      // 从用户消息元素向上查找滚动容器
+      let parent = (firstTurn as HTMLElement).parentElement;
+      while (parent && parent !== document.body) {
+        if (parent.classList.contains('ds-scroll-area')) {
+          dsScrollArea = parent;
+          console.log('[Timeline] 从消息元素向上找到滚动容器');
+          break;
+        }
+        parent = parent.parentElement;
       }
-      p = p.parentElement;
     }
-    if (!this.scrollContainer)
-      this.scrollContainer =
-        (document.scrollingElement as HTMLElement) ||
-        document.documentElement ||
-        (document.body as unknown as HTMLElement);
+    
+    // 如果没找到，尝试查找包含 .fbb737a4 的滚动区域（用户消息内容容器）
+    if (!dsScrollArea) {
+      const allScrollAreas = document.querySelectorAll('.ds-scroll-area');
+      for (const area of allScrollAreas) {
+        if (area.querySelector('.fbb737a4')) {
+          dsScrollArea = area as HTMLElement;
+          console.log('[Timeline] 通过 .fbb737a4 找到对话内容滚动容器');
+          break;
+        }
+      }
+    }
+    
+    if (dsScrollArea) {
+      this.scrollContainer = dsScrollArea;
+      // DeepSeek: 将滚动容器也设为 conversationContainer，确保能找到所有用户消息
+      if (!this.conversationContainer) {
+        this.conversationContainer = dsScrollArea;
+        console.log('[Timeline] ✅ conversationContainer 设为滚动容器');
+      }
+      console.log('[Timeline] ✅ 滚动容器:', dsScrollArea.className);
+    } else {
+      // 后备方案：向上查找有 overflow 的父元素
+      let p: HTMLElement | null = (firstTurn as HTMLElement) || this.conversationContainer;
+      while (p && p !== document.body) {
+        const st = getComputedStyle(p);
+        if (st.overflowY === 'auto' || st.overflowY === 'scroll') {
+          this.scrollContainer = p;
+          break;
+        }
+        p = p.parentElement;
+      }
+      if (!this.scrollContainer) {
+        this.scrollContainer =
+          (document.scrollingElement as HTMLElement) ||
+          document.documentElement ||
+          (document.body as unknown as HTMLElement);
+        console.log('[Timeline] 使用默认滚动容器:', this.scrollContainer?.tagName);
+      }
+      // 如果 conversationContainer 还没设置，将其设为 scrollContainer
+      if (!this.conversationContainer && this.scrollContainer) {
+        this.conversationContainer = this.scrollContainer;
+        console.log('[Timeline] ✅ conversationContainer 设为后备滚动容器');
+      }
+    }
+    
+    // 最终检查
+    console.log('[Timeline] findCriticalElements 完成，scrollContainer:', this.scrollContainer ? '✅' : '❌ NULL');
+    console.log('[Timeline] conversationContainer:', this.conversationContainer ? '✅' : '❌ NULL');
+    console.log('[Timeline] userTurnSelector:', this.userTurnSelector);
+    
+    // 确保 conversationContainer 已设置
+    if (!this.conversationContainer) {
+      console.error('[Timeline] ❌ conversationContainer 未设置，初始化失败');
+      return false;
+    }
+    
     return true;
   }
 
@@ -298,6 +393,16 @@ export class TimelineManager {
       const user = localStorage.getItem('deepseekTimelineUserTurnSelector');
       if (user && typeof user === 'string') return user;
       const auto = localStorage.getItem('deepseekTimelineUserTurnSelectorAuto');
+      
+      // 清除不精确的选择器（.ds-message 会匹配所有消息，包括助手消息）
+      if (auto === '.ds-message') {
+        console.log('[Timeline] 检测到不精确的选择器 .ds-message，已清除');
+        try {
+          localStorage.removeItem('deepseekTimelineUserTurnSelectorAuto');
+        } catch {}
+        return '';
+      }
+      
       return auto && typeof auto === 'string' ? auto : '';
     } catch {
       return '';
@@ -553,9 +658,23 @@ export class TimelineManager {
       !this.userTurnSelector
     )
       return;
+    console.log('[Timeline] recalculate: conversationContainer =', this.conversationContainer);
+    console.log('[Timeline] recalculate: conversationContainer 类名 =', this.conversationContainer.className);
     const userTurnNodeList = this.conversationContainer.querySelectorAll(this.userTurnSelector);
+    console.log('[Timeline] recalculate: userTurnSelector =', this.userTurnSelector);
+    console.log('[Timeline] recalculate: 找到元素数量 =', userTurnNodeList.length);
+    if (userTurnNodeList.length > 0) {
+      console.log('[Timeline] recalculate: 第一个元素 =', userTurnNodeList[0]);
+      console.log('[Timeline] recalculate: 第一个元素类名 =', userTurnNodeList[0].className);
+      if (userTurnNodeList.length > 1) {
+        console.log('[Timeline] recalculate: 第二个元素 =', userTurnNodeList[1]);
+        console.log('[Timeline] recalculate: 第二个元素类名 =', userTurnNodeList[1].className);
+      }
+    }
+    
     this.visibleRange = { start: 0, end: -1 };
     if (userTurnNodeList.length === 0) {
+      console.log('[Timeline] ⚠️ 没有找到用户消息元素');
       if (!this.zeroTurnsTimer) {
         this.zeroTurnsTimer = window.setTimeout(() => {
           this.zeroTurnsTimer = null;
@@ -574,29 +693,59 @@ export class TimelineManager {
 
     // Filter to top-level matches first to avoid nested duplicates, then dedupe by text+offset
     let allEls = Array.from(userTurnNodeList) as HTMLElement[];
+    console.log('[Timeline] recalculate: filterTopLevel 前 =', allEls.length);
     allEls = this.filterTopLevel(allEls);
-    if (allEls.length === 0) return;
+    console.log('[Timeline] recalculate: filterTopLevel 后 =', allEls.length);
+    if (allEls.length === 0) {
+      console.log('[Timeline] ⚠️ filterTopLevel 后没有元素了');
+      return;
+    }
 
-    const firstTurnOffset = (allEls[0] as HTMLElement).offsetTop;
+    // DeepSeek: 使用 getBoundingClientRect 来获取元素在页面上的实际位置
+    // 因为 offsetTop 相对于 offsetParent，而不是滚动容器
+    const firstRect = (allEls[0] as HTMLElement).getBoundingClientRect();
+    const firstTurnOffset = firstRect.top + (this.scrollContainer?.scrollTop || 0);
+    
+    console.log('[Timeline] recalculate: dedupeByTextAndOffset 前 =', allEls.length);
     allEls = this.dedupeByTextAndOffset(allEls, firstTurnOffset);
+    console.log('[Timeline] recalculate: dedupeByTextAndOffset 后 =', allEls.length);
+    console.log('[Timeline] recalculate: 最终将创建', allEls.length, '个时间轴节点');
 
     let contentSpan: number;
     if (allEls.length < 2) {
       contentSpan = 1;
     } else {
-      const lastTurnOffset = (allEls[allEls.length - 1] as HTMLElement).offsetTop;
+      const lastRect = (allEls[allEls.length - 1] as HTMLElement).getBoundingClientRect();
+      const lastTurnOffset = lastRect.top + (this.scrollContainer?.scrollTop || 0);
       contentSpan = lastTurnOffset - firstTurnOffset;
     }
     if (contentSpan <= 0) contentSpan = 1;
     this.firstUserTurnOffset = firstTurnOffset;
     this.contentSpanPx = contentSpan;
 
+    console.log('[Timeline] 🔍 详细位置信息：');
+    console.log('[Timeline] firstTurnOffset =', firstTurnOffset, 'px');
+    console.log('[Timeline] contentSpan =', contentSpan, 'px');
+    
     this.markerMap.clear();
     this.markers = Array.from(allEls).map((el, idx) => {
       const element = el as HTMLElement;
-      const offsetFromStart = element.offsetTop - firstTurnOffset;
+      const rect = element.getBoundingClientRect();
+      const elementOffset = rect.top + (this.scrollContainer?.scrollTop || 0);
+      const offsetFromStart = elementOffset - firstTurnOffset;
       let n = offsetFromStart / contentSpan;
       n = Math.max(0, Math.min(1, n));
+      
+      // 详细日志
+      console.log(`[Timeline] 节点 ${idx + 1}:`, {
+        rectTop: rect.top,
+        scrollTop: this.scrollContainer?.scrollTop || 0,
+        绝对位置: elementOffset,
+        offsetFromStart: offsetFromStart,
+        相对位置n: n,
+        文本预览: element.textContent?.substring(0, 20) + '...'
+      });
+      
       const id = this.ensureTurnId(element, idx);
       const m = {
         id,
@@ -645,6 +794,15 @@ export class TimelineManager {
   }
 
   private setupEventListeners(): void {
+    if (!this.ui.timelineBar) {
+      console.error('[Timeline] Cannot setup event listeners: timelineBar is null');
+      return;
+    }
+    if (!this.scrollContainer) {
+      console.error('[Timeline] Cannot setup event listeners: scrollContainer is null');
+      return;
+    }
+
     this.onTimelineBarClick = (e: Event) => {
       const dot = (e.target as HTMLElement).closest('.timeline-dot') as DotElement | null;
       if (!dot) return;
@@ -671,10 +829,10 @@ export class TimelineManager {
         this.smoothScrollTo(targetElement, dur);
       }
     };
-    this.ui.timelineBar!.addEventListener('click', this.onTimelineBarClick);
+    this.ui.timelineBar.addEventListener('click', this.onTimelineBarClick);
 
     this.onScroll = () => this.scheduleScrollSync();
-    this.scrollContainer!.addEventListener('scroll', this.onScroll, { passive: true });
+    this.scrollContainer.addEventListener('scroll', this.onScroll, { passive: true });
 
     this.onTimelineWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -1616,6 +1774,7 @@ export class TimelineManager {
     this.activeTurnId = null;
     this.scrollContainer = null;
     this.conversationContainer = null;
+    this.isInitializing = false;
     if (this.activeChangeTimer) {
       clearTimeout(this.activeChangeTimer);
       this.activeChangeTimer = null;
